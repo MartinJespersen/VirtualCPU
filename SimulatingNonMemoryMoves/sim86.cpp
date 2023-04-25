@@ -149,7 +149,7 @@ sim_context SubSim(instruction& Decoded, cpu_register& Register, flags& Flags, s
     SimContext.ValFinal = SimContext.ValOp0 - SimContext.ValOp1;
     Flags.S = (SimContext.ValFinal & MSB_SET) != 0;
     Flags.Z = SimContext.ValFinal == 0;
-    
+    Register.xRegister[Decoded.Operands[0].Register.Index] = SimContext.ValFinal;
 
     return SimContext;
 }
@@ -179,8 +179,24 @@ sim_context AddSim(instruction& Decoded, cpu_register& Register, flags& Flags, s
     SimContext.ValFinal = SimContext.ValOp0 + SimContext.ValOp1;
     Flags.S = (SimContext.ValFinal & MSB_SET) != 0;
     Flags.Z = SimContext.ValFinal == 0;
-
+    Register.xRegister[Decoded.Operands[0].Register.Index] = SimContext.ValFinal;
     return SimContext;
+}
+
+void print_add_sub_cmp(instruction& Decoded, sim_context& SimContext, flags& Flags){
+    printf("%s, ", GetRegName(Decoded.Operands[0].Register));
+    if (Decoded.Operands[1].Type == Operand_Immediate)
+        printf("%d; ", Decoded.Operands[1].Immediate.Value);
+    else if (Decoded.Operands[1].Type == Operand_Register)
+        printf("%s; ", GetRegName(Decoded.Operands[1].Register));
+    printf("%s:", GetRegName(Decoded.Operands[0].Register));
+
+    printf("%x->", SimContext.ValOp0);
+    printf("%x", SimContext.ValFinal);
+    if(Flags.S)
+        printf(" flags:->SF");
+    if(Flags.Z)
+        printf(" flags:->PZ");
 }
 
 int main(){
@@ -194,7 +210,7 @@ int main(){
     }
 
     u8* buffer;
-    size_t fileSize = fill_buffer("listing46", buffer);
+    size_t fileSize = fill_buffer("listing49", buffer);
     if (fileSize == -1){
         printf("File cannot be opend");
     }
@@ -213,17 +229,11 @@ int main(){
         Sim86_Decode8086Instruction(fileSize - Offset, buffer + Offset, &Decoded);
         if(Decoded.Op)
         {
-            Flags = {0};
+            u32 OpSize = Decoded.Size;
             Offset += Decoded.Size;
 
             printf("%s ", GetMnemonic(Decoded.Op));
-            printf("%s, ", GetRegName(Decoded.Operands[0].Register));
             
-            if (Decoded.Operands[1].Type == Operand_Immediate)
-                printf("%d; ", Decoded.Operands[1].Immediate.Value);
-            else if (Decoded.Operands[1].Type == Operand_Register)
-                printf("%s; ", GetRegName(Decoded.Operands[1].Register));
-            printf("%s:", GetRegName(Decoded.Operands[0].Register));
 
             sim_context SimContext;
 
@@ -232,31 +242,37 @@ int main(){
                 case Op_mov:
                 {
                     MovSim(Decoded, Register, SimContext);
+                    print_add_sub_cmp(Decoded, SimContext, Flags);
                 } break;
                 case Op_sub:
                 {
                     SubSim(Decoded, Register, Flags, SimContext);
+                    print_add_sub_cmp(Decoded, SimContext, Flags);
                 } break;
                 case Op_add:
                 {
                     AddSim(Decoded, Register, Flags, SimContext);
+                    print_add_sub_cmp(Decoded, SimContext, Flags);
                 } break;
                 case Op_cmp:
                 {
                     CmpSim(Decoded, Register, Flags, SimContext);
+                    print_add_sub_cmp(Decoded, SimContext, Flags);
+                } break;
+                case Op_jne:
+                {
+                    s32 JumpOffset = Decoded.Operands[0].Immediate.Value;
+                    printf("$%d", JumpOffset + Decoded.Size);
+                    if(!Flags.Z)
+                        Offset += JumpOffset;
                 } break;
                 default:
                 {
                     return 0;
                 } break;
             }
-            Register.xRegister[Decoded.Operands[0].Register.Index] = SimContext.ValFinal;
-            printf("%x->", SimContext.ValOp0);
-            printf("%x", SimContext.ValFinal);
-            if(Flags.S)
-                printf(" flags:->SF");
-            if(Flags.Z)
-                printf(" flags:->PZ");
+            
+            printf(" ip:%x->%x", Offset - Decoded.Size, Offset);
             printf("\n");
         }
         else
